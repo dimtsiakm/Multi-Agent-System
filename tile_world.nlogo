@@ -1,6 +1,8 @@
 breed [ robots robot ]
 
-robots-own [carry_tile]
+robots-own [carry_tile score]
+
+patches-own [ countdown ]
 
 to setup
   clear-all
@@ -9,36 +11,44 @@ to setup
   setup-obstacles
   setup-robots
   setup-tiles
-  ;;setup-holes
+  setup-holes
   reset-ticks
+end
+
+to setup-holes
+  ask patches [
+    if random 100 < max_tiles_holes_ratio [
+      set pcolor orange
+      set countdown random max_countdown
+    ]
+  ]
 end
 
 to setup-tiles
   ask patches [
-    if random 1000 < 20 [
+    if random 100 < max_tiles_holes_ratio [
       set pcolor blue
+      set countdown random max_countdown
     ]
   ]
 end
 
 to setup-obstacles
   ask patches [
-    if random 1000 < 50 [
+    if random 100 < obstacle_ratio [
       set pcolor yellow
     ]
   ]
-  ask patch 0 1 [set pcolor yellow]
-  ask patch 2 0 [set pcolor yellow]
-
 end
 
 to setup-robots
-  create-robots 1
+  create-robots max_agents
   ask robots [
+    set color white
     set shape "bug"
     setxy random-xcor random-ycor
     set carry_tile False
-    ;setxy 0 -5
+    set score 0
     set heading 0
   ]
 end
@@ -46,43 +56,60 @@ end
 ;;;main function
 to move_to_tile
   ask turtles[
-    ask patch-here [
-      type "current turtle's patch : " type pxcor type " " print pycor
+
+    ;SEARCH_TILES else SEARCH_HOLES
+    ifelse not carry_tile [
+      ;TILES
+      if patch_found? blue [
+        set carry_tile True
+        set color red
+        set pcolor black
+        set score (score + 2)
     ]
-
-    if tile_found? [die]
-
-    ifelse carry_tile = True [
-      ;search for holes
     ][
-      ;search for tiles
-      rotate_turtle_tiles xcor ycor
+      ;HOLES
+      if patch_found? orange [
+        set carry_tile False
+        set color white
+        set pcolor black
+        set score (score + 10)
+      ]
     ]
 
-
+    rotate_turtle xcor ycor
     forward 1
 
-
     ;print is_obstacle_ahead? 0 1
-    type "available movements : " print available_movements xcor ycor
+    ;type "available movements : " print available_movements xcor ycor
     let nearest_tile find_nearest_tile
   ]
-  print "-----"
+  check_tiles_holes
+  create_new_tiles_holes
+  display_labels
+  tick
 end
 
-to-report tile_found?
+to-report patch_found? [x]
   let found False
   ask patch-here [
-    if pcolor = blue [
+    if pcolor = x [
       set found True
   ]]
   ifelse found [report True][report False]
 end
 
-to rotate_turtle_tiles [x y]
-  ;let move_code get_random_move x y
-  let move_code find_best_move_from_availables x y
-  ;from available moves [move_code] find the best which minimaze the distance from nearest tile.
+to rotate_turtle [x y]
+  let move_code -1
+
+  ifelse carry_tile = True [
+    ;search for holes
+    ;for now just only random move
+    set move_code find_best_move_from_availables x y "hole"
+  ][
+      ;search for tiles
+    set move_code find_best_move_from_availables x y "tile"
+  ]
+
 
   (ifelse move_code = 1 [set heading 0];up
   move_code = 2 [set heading 90];right
@@ -90,26 +117,36 @@ to rotate_turtle_tiles [x y]
   move_code = 4 [set heading 180];back
   [print "I don't know how to proceed"])
 end
-
-
 ;returns patch
 to-report find_nearest_tile
   let nearest_tile min-one-of patches with [pcolor = blue] [distance myself]
   report nearest_tile
 end
 
-to-report find_best_move_from_availables [x y]
+to-report find_nearest_hole
+  let nearest_tile min-one-of patches with [pcolor = orange] [distance myself]
+  report nearest_tile
+end
+
+to-report find_best_move_from_availables [x y search_mode]
   let movement_list []
   let min_distance 100
   let move_code -1
-  let nearest_tile find_nearest_tile
+  let nearest_goal 0
+  (ifelse search_mode = "tile" [
+    set nearest_goal find_nearest_tile
+  ] search_mode = "hole"
+  [
+    set nearest_goal find_nearest_hole
+  ])
+
   let distance_buffer 0
 
   set movement_list available_movements x y
 
-  ifelse nearest_tile != nobody [
-    ask nearest_tile [
-      type "nearest tile's coords : " type pxcor type " " print pycor
+  ifelse nearest_goal != nobody [
+    ask nearest_goal [
+      ;type "nearest tile's coords : " type pxcor type " " print pycor
       foreach movement_list [
         ;UP
         k ->
@@ -188,21 +225,41 @@ to-report available_movements [x y] ;current position of turtle
    report movement_list
 end
 
-
-to-report is_obstacle_ahead? [x y] ;;akurwse th
-  let k 1
-  ask patch-at x y [
-    if pcolor = yellow [
-      set k 0
-      output-print "mphka br"
+to check_tiles_holes
+  ask patches with [pcolor = blue][;tiles
+    ifelse countdown <= 0 [
+      set pcolor black
+    ][
+      set countdown (countdown - 1)
     ]
-    ;set pcolor blue
   ]
-  ifelse k = 0[
-    report False
-  ][
-    report True
+  ask patches with [pcolor = orange][;holes
+    ifelse countdown <= 0 [
+      set pcolor black
+    ][
+      set countdown (countdown - 1)
+    ]
   ]
+end
+
+to create_new_tiles_holes
+  ;na balw maximum number of tiles/holes.
+  ask patches with [pcolor != yellow][
+    if random 100 < max_tiles_holes_ratio [
+      set pcolor blue
+      set countdown random max_countdown
+    ]
+  ]
+  ask patches with [pcolor != yellow][
+    if random 100 < max_tiles_holes_ratio [
+      set pcolor orange
+      set countdown random max_countdown
+    ]
+  ]
+end
+
+to display_labels
+  ask turtles [ set label score ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -233,10 +290,10 @@ ticks
 30.0
 
 BUTTON
-70
-209
-173
-242
+400
+374
+503
+407
 NIL
 setup
 NIL
@@ -250,10 +307,10 @@ NIL
 1
 
 BUTTON
-70
-174
-173
-207
+400
+339
+503
+372
 NIL
 move_to_tile
 T
@@ -265,6 +322,66 @@ NIL
 NIL
 NIL
 1
+
+SLIDER
+211
+375
+383
+408
+max_countdown
+max_countdown
+5
+60
+5.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+211
+409
+383
+442
+max_tiles_holes_ratio
+max_tiles_holes_ratio
+0
+30
+10.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+211
+310
+383
+343
+max_agents
+max_agents
+1
+40
+18.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+211
+343
+383
+376
+obstacle_ratio
+obstacle_ratio
+0
+100
+8.0
+1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 @#$#@#$#@
