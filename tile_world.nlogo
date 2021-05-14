@@ -1,19 +1,29 @@
 breed [ robots robot ]
 
+robots-own [carry_tile]
+
 to setup
   clear-all
   resize-world -9 9 -9 9
   set-patch-size 15
   setup-obstacles
   setup-robots
-  ;;setup-tiles
+  setup-tiles
   ;;setup-holes
   reset-ticks
 end
 
+to setup-tiles
+  ask patches [
+    if random 1000 < 20 [
+      set pcolor blue
+    ]
+  ]
+end
+
 to setup-obstacles
   ask patches [
-    if random 1000 < 180 [
+    if random 1000 < 50 [
       set pcolor yellow
     ]
   ]
@@ -26,45 +36,54 @@ to setup-robots
   create-robots 1
   ask robots [
     set shape "bug"
-    ;setxy random-xcor random-ycor
-    setxy 0 -5
-    ;set size 3
+    setxy random-xcor random-ycor
+    set carry_tile False
+    ;setxy 0 -5
     set heading 0
   ]
 end
 
-to go
-  ask turtles [
-    ;output-print min [distancexy pxcor pycor] of patches with [pcolor = yellow]
-    output-print min [distance myself] of patches with [pcolor = yellow]
-    fd 1
-  ]
-  tick
-end
-
+;;;main function
 to move_to_tile
-  let movement_code -1
-  let returned_value -1
-
   ask turtles[
     ask patch-here [
-      print pxcor
-      print pycor
-      print "^-- current patch"
-      set pcolor red
+      type "current turtle's patch : " type pxcor type " " print pycor
     ]
+
+    if tile_found? [die]
+
+    ifelse carry_tile = True [
+      ;search for holes
+    ][
+      ;search for tiles
+      rotate_turtle_tiles xcor ycor
+    ]
+
+
     forward 1
-    rotate_turtle xcor ycor
-    ;if is_obstacle_ahead? (pxcor) (pycor)
-    ;print is_obstacle_ahead?
+
+
     ;print is_obstacle_ahead? 0 1
-    print available_movements xcor ycor
+    type "available movements : " print available_movements xcor ycor
+    let nearest_tile find_nearest_tile
   ]
   print "-----"
 end
 
-to rotate_turtle [x y]
-  let move_code get_move x y
+to-report tile_found?
+  let found False
+  ask patch-here [
+    if pcolor = blue [
+      set found True
+  ]]
+  ifelse found [report True][report False]
+end
+
+to rotate_turtle_tiles [x y]
+  ;let move_code get_random_move x y
+  let move_code find_best_move_from_availables x y
+  ;from available moves [move_code] find the best which minimaze the distance from nearest tile.
+
   (ifelse move_code = 1 [set heading 0];up
   move_code = 2 [set heading 90];right
   move_code = 3 [set heading 270];left
@@ -73,7 +92,66 @@ to rotate_turtle [x y]
 end
 
 
-to-report get_move [x y] ;current turtle position
+;returns patch
+to-report find_nearest_tile
+  let nearest_tile min-one-of patches with [pcolor = blue] [distance myself]
+  report nearest_tile
+end
+
+to-report find_best_move_from_availables [x y]
+  let movement_list []
+  let min_distance 100
+  let move_code -1
+  let nearest_tile find_nearest_tile
+  let distance_buffer 0
+
+  set movement_list available_movements x y
+
+  ifelse nearest_tile != nobody [
+    ask nearest_tile [
+      type "nearest tile's coords : " type pxcor type " " print pycor
+      foreach movement_list [
+        ;UP
+        k ->
+        (ifelse k = 1 [
+          set distance_buffer distancexy x (y + 1)
+          if (distance_buffer < min_distance) [
+            set min_distance distance_buffer ;new min distance
+            set move_code 1 ;Up is best move until now!
+          ]
+          ;Right
+        ]k = 2 [
+          set distance_buffer distancexy (x + 1) y
+          if (distance_buffer < min_distance) [
+            set min_distance distance_buffer ;new min distance
+            set move_code 2 ;Up is best move until now!
+          ]
+          ]
+          ;Left
+          k = 3 [
+            set distance_buffer distancexy (x - 1) y
+            if (distance_buffer < min_distance) [
+              set min_distance distance_buffer ;new min distance
+              set move_code 3 ;Up is best move until now!
+            ]
+          ]
+          ;Back
+          k = 4 [
+            set distance_buffer distancexy x (y - 1)
+            if (distance_buffer < min_distance) [
+              set min_distance distance_buffer ;new min distance
+              set move_code 4 ;Up is best move until now!
+            ]
+        ][])
+      ]
+      ]
+    ][
+      set move_code one-of movement_list
+    ]
+  report move_code
+end
+
+to-report get_random_move [x y] ;current turtle position
   let movement_list []
   set movement_list available_movements x y
   if empty? movement_list [
@@ -155,10 +233,10 @@ ticks
 30.0
 
 BUTTON
-210
-448
-273
-481
+70
+209
+173
+242
 NIL
 setup
 NIL
