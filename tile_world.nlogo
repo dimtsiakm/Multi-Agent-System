@@ -1,34 +1,45 @@
-breed [ robots robot ]
+globals [ patients hospitals total_score_ambulances total_score_small_ambulances ]
 
-robots-own [carry_tile score]
+breed [ ambulances ambulance ]
+breed [ small-ambulances small-ambulance ]
+
+turtles-own [carry_patient score]
 
 patches-own [ countdown ]
 
 to setup
   clear-all
-  resize-world -9 9 -9 9
-  set-patch-size 15
+  resize-world (- world_size) world_size (- world_size) world_size
+  set-patch-size 12
+  set total_score_ambulances 0
+  set total_score_small_ambulances 0
+  set patients 0
+  set hospitals 0
   setup-obstacles
-  setup-robots
-  setup-tiles
-  setup-holes
+  setup-ambulances
+  setup-small-ambulances
+  setup-patients
+  setup-hospitals
   reset-ticks
 end
 
-to setup-holes
+to setup-hospitals
   ask patches [
-    if random 100 < max_tiles_holes_ratio [
+    if random 100 < max_patients_hospitals_ratio and hospitals < max_hospitals[
+      ;create-people 1 [setxy pxcor pycor set shape "person"]
       set pcolor orange
       set countdown random max_countdown
+      set hospitals hospitals + 1
     ]
   ]
 end
 
-to setup-tiles
+to setup-patients
   ask patches [
-    if random 100 < max_tiles_holes_ratio [
+    if random 100 < max_patients_hospitals_ratio and patients < max_patients [
       set pcolor blue
       set countdown random max_countdown
+      set patients patients + 1
     ]
   ]
 end
@@ -41,51 +52,83 @@ to setup-obstacles
   ]
 end
 
-to setup-robots
-  create-robots max_agents
-  ask robots [
-    set color white
-    set shape "bug"
+to setup-small-ambulances
+  create-small-ambulances max-small-ambulances
+  ask small-ambulances [
+    set color yellow
+    set shape "car"
     setxy random-xcor random-ycor
-    set carry_tile False
+    set carry_patient False
+    set score 0
+    set heading 0
+  ]
+end
+
+to setup-ambulances
+  create-ambulances max_agents
+  ask ambulances [
+    set color white
+    set shape "truck"
+    setxy random-xcor random-ycor
+    set carry_patient False
     set score 0
     set heading 0
   ]
 end
 
 ;;;main function
-to move_to_tile
+to move_to_patient
   ask turtles[
-
-    ;SEARCH_TILES else SEARCH_HOLES
-    ifelse not carry_tile [
-      ;TILES
+    ;SEARCH_patients else SEARCH_hospitals
+    ifelse not carry_patient [
+      ;patients
       if patch_found? blue [
-        set carry_tile True
+        set carry_patient True
         set color red
         set pcolor black
-        set score (score + 2)
+        set patients (patients - 1)
+        (ifelse is-ambulance? self [
+          set total_score_ambulances (total_score_ambulances + 1)
+        ] is-small-ambulance? self [
+          set total_score_small_ambulances (total_score_small_ambulances + 1)
+        ][])
+
     ]
     ][
-      ;HOLES
+      ;hospitals
       if patch_found? orange [
-        set carry_tile False
+        set carry_patient False
         set color white
         set pcolor black
-        set score (score + 10)
+        set hospitals (hospitals - 1)
+        set score (score + 1)
       ]
     ]
+  ]
 
-    rotate_turtle xcor ycor
+  ask ambulances [
+    rotate_turtle xcor ycor "ambulance"
     forward 1
 
-    ;print is_obstacle_ahead? 0 1
-    ;type "available movements : " print available_movements xcor ycor
-    let nearest_tile find_nearest_tile
+    let nearest_patient find_nearest_patient "ambulance"
   ]
-  check_tiles_holes
-  create_new_tiles_holes
+
+  ask small-ambulances [
+    rotate_turtle xcor ycor "small-ambulance"
+    forward 1
+
+    let nearest_patient find_nearest_patient "small-ambulance"
+  ]
+
+  check_patients_hospitals
+  if patients <= 0 or hospitals <= 0 [
+    create_new_patients_hospitals
+  ]
+  ;create_new_patients_hospitals
   display_labels
+  set patients (count patches with [pcolor = blue])
+  set hospitals (count patches with [pcolor = orange])
+  ;type "hospitals: " type hospitals type ", patients: " print patients
   tick
 end
 
@@ -98,18 +141,17 @@ to-report patch_found? [x]
   ifelse found [report True][report False]
 end
 
-to rotate_turtle [x y]
+to rotate_turtle [x y ambulance_mode]
   let move_code -1
 
-  ifelse carry_tile = True [
-    ;search for holes
+  ifelse carry_patient = True [
+    ;search for hospitals
     ;for now just only random move
-    set move_code find_best_move_from_availables x y "hole"
+    set move_code find_best_move_from_availables x y "hospital" ambulance_mode
   ][
-      ;search for tiles
-    set move_code find_best_move_from_availables x y "tile"
+      ;search for patients
+    set move_code find_best_move_from_availables x y "patient" ambulance_mode
   ]
-
 
   (ifelse move_code = 1 [set heading 0];up
   move_code = 2 [set heading 90];right
@@ -118,26 +160,34 @@ to rotate_turtle [x y]
   [print "I don't know how to proceed"])
 end
 ;returns patch
-to-report find_nearest_tile
-  let nearest_tile min-one-of patches with [pcolor = blue] [distance myself]
-  report nearest_tile
+to-report find_nearest_patient [ambulance_mode]
+  let nearest_patient 0
+  (ifelse
+    ambulance_mode = "ambulance"[
+    set nearest_patient min-one-of patches with [pcolor = blue] [distance myself]
+  ]ambulance_mode = "small-ambulance" [
+    set nearest_patient min-one-of patches in-radius small-ambulance-lookahead with [pcolor = blue] [distance myself]
+  ][])
+
+
+  report nearest_patient
 end
 
-to-report find_nearest_hole
-  let nearest_tile min-one-of patches with [pcolor = orange] [distance myself]
-  report nearest_tile
+to-report find_nearest_hospital
+  let nearest_patient min-one-of patches with [pcolor = orange] [distance myself]
+  report nearest_patient
 end
 
-to-report find_best_move_from_availables [x y search_mode]
+to-report find_best_move_from_availables [x y search_mode ambulance_mode]
   let movement_list []
   let min_distance 100
   let move_code -1
   let nearest_goal 0
-  (ifelse search_mode = "tile" [
-    set nearest_goal find_nearest_tile
-  ] search_mode = "hole"
+  (ifelse search_mode = "patient" [
+    set nearest_goal find_nearest_patient ambulance_mode
+  ] search_mode = "hospital"
   [
-    set nearest_goal find_nearest_hole
+    set nearest_goal find_nearest_hospital
   ])
 
   let distance_buffer 0
@@ -146,7 +196,7 @@ to-report find_best_move_from_availables [x y search_mode]
 
   ifelse nearest_goal != nobody [
     ask nearest_goal [
-      ;type "nearest tile's coords : " type pxcor type " " print pycor
+      ;type "nearest patient's coords : " type pxcor type " " print pycor
       foreach movement_list [
         ;UP
         k ->
@@ -194,7 +244,6 @@ to-report get_random_move [x y] ;current turtle position
   if empty? movement_list [
     report -1
   ]
-  ;report first movement_list
   report one-of movement_list
 end
 
@@ -202,58 +251,64 @@ to-report available_movements [x y] ;current position of turtle
    let movement_list []
 
    ask patch x (y + 1)[
-   if pcolor != yellow [
+   if pcolor != yellow and not any? other turtles-here[
       set movement_list lput 1 movement_list ;UP
     ]
    ]
    ask patch (x + 1) y [
-   if pcolor != yellow [
+   if pcolor != yellow and not any? other turtles-here[
       set movement_list lput 2 movement_list ;RIGHT
     ]
    ]
    ask patch (x - 1) y [
-   if pcolor != yellow [
+   if pcolor != yellow and not any? other turtles-here[
       set movement_list lput 3 movement_list ;LEFT
     ]
    ]
    ask patch x (y - 1) [
-   if pcolor != yellow [
-      set movement_list lput 4 movement_list ;BACK
+   if pcolor != yellow and not any? other turtles-here[
+      set movement_list lput 4 movement_list ;DOWN
     ]
    ]
    if empty? movement_list [set movement_list lput -1 movement_list]
    report movement_list
 end
 
-to check_tiles_holes
-  ask patches with [pcolor = blue][;tiles
+to check_patients_hospitals
+  ask patches with [pcolor = blue][;patients
     ifelse countdown <= 0 [
       set pcolor black
+      set patients (patients - 1)
+      create_new_patients_hospitals
     ][
       set countdown (countdown - 1)
     ]
   ]
-  ask patches with [pcolor = orange][;holes
+  ask patches with [pcolor = orange][;hospitals
     ifelse countdown <= 0 [
       set pcolor black
+      set hospitals (hospitals - 1)
+      create_new_patients_hospitals
     ][
       set countdown (countdown - 1)
     ]
   ]
 end
 
-to create_new_tiles_holes
-  ;na balw maximum number of tiles/holes.
+to create_new_patients_hospitals
+  ;na balw maximum number of patients/hospitals.
   ask patches with [pcolor != yellow][
-    if random 100 < max_tiles_holes_ratio [
+    if random 100 < max_patients_hospitals_ratio and patients < max_patients [
       set pcolor blue
       set countdown random max_countdown
+      set patients patients + 1
     ]
   ]
   ask patches with [pcolor != yellow][
-    if random 100 < max_tiles_holes_ratio [
+    if random 100 < max_patients_hospitals_ratio and hospitals < max_hospitals [
       set pcolor orange
       set countdown random max_countdown
+      set hospitals hospitals + 1
     ]
   ]
 end
@@ -265,11 +320,11 @@ end
 GRAPHICS-WINDOW
 210
 10
-503
-304
+950
+751
 -1
 -1
-15.0
+12.0
 1
 10
 1
@@ -279,10 +334,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--9
-9
--9
-9
+-30
+30
+-30
+30
 0
 0
 1
@@ -290,10 +345,10 @@ ticks
 30.0
 
 BUTTON
-400
-374
-503
-407
+3
+712
+106
+745
 NIL
 setup
 NIL
@@ -307,12 +362,12 @@ NIL
 1
 
 BUTTON
-400
-339
-503
-372
+2
+677
+128
+710
 NIL
-move_to_tile
+move_to_patient
 T
 1
 T
@@ -324,40 +379,25 @@ NIL
 1
 
 SLIDER
-211
-375
-383
-408
+2
+538
+174
+571
 max_countdown
 max_countdown
 5
-60
-5.0
+250
+199.0
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-211
-409
-383
-442
-max_tiles_holes_ratio
-max_tiles_holes_ratio
-0
-30
-10.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-211
-310
-383
-343
+2
+473
+174
+506
 max_agents
 max_agents
 1
@@ -369,15 +409,120 @@ NIL
 HORIZONTAL
 
 SLIDER
-211
-343
-383
-376
+2
+506
+174
+539
 obstacle_ratio
 obstacle_ratio
 0
+20
+3.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+2
+606
+174
+639
+max_hospitals
+max_hospitals
+0
+50
+28.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+2
+640
+174
+673
+max_patients
+max_patients
+0
+50
+28.0
+1
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+2
+298
+157
+358
+world_size
+30.0
+1
+0
+Number
+
+SLIDER
+2
+439
+174
+472
+max-small-ambulances
+max-small-ambulances
+0
+50
+25.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+225
+637
+983
+757
+score per ambulance type
+time
+score
+0.0
+10.0
+0.0
+10.0
+true
+true
+"" ""
+PENS
+"ambulance" 1.0 0 -16777216 true "" "plot total_score_ambulances"
+"small-ambulance" 1.0 0 -5298144 true "" "plot total_score_small_ambulances"
+
+SLIDER
+2
+405
+203
+438
+small-ambulance-lookahead
+small-ambulance-lookahead
+1
 100
-8.0
+1.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+2
+572
+207
+605
+max_patients_hospitals_ratio
+max_patients_hospitals_ratio
+0
+20
+2.0
 1
 1
 NIL
