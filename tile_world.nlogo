@@ -2,8 +2,10 @@ globals [ patients hospitals total_score_ambulances total_score_small_ambulances
 
 breed [ ambulances ambulance ]
 breed [ small-ambulances small-ambulance ]
+breed [ pedestrians pedestrian ]
 
-turtles-own [carry_patient score]
+ambulances-own [ carry_patient score ]
+small-ambulances-own [ carry_patient score ]
 
 patches-own [ countdown ]
 
@@ -18,6 +20,7 @@ to setup
   setup-obstacles
   setup-ambulances
   setup-small-ambulances
+  setup-pedestrians
   setup-patients
   setup-hospitals
   reset-ticks
@@ -25,7 +28,7 @@ end
 
 to setup-hospitals
   ask patches [
-    if random 100 < max_patients_hospitals_ratio and hospitals < max_hospitals[
+    if random 100 < 20 and hospitals < max_hospitals[
       ;create-people 1 [setxy pxcor pycor set shape "person"]
       set pcolor orange
       set countdown random max_countdown
@@ -36,7 +39,7 @@ end
 
 to setup-patients
   ask patches [
-    if random 100 < max_patients_hospitals_ratio and patients < max_patients [
+    if random 100 < 20 and patients < max_patients [
       set pcolor blue
       set countdown random max_countdown
       set patients patients + 1
@@ -49,6 +52,16 @@ to setup-obstacles
     if random 100 < obstacle_ratio [
       set pcolor yellow
     ]
+  ]
+end
+
+to setup-pedestrians
+  create-pedestrians max-pedestrians
+  ask pedestrians [
+    set color blue
+    set shape "person"
+    setxy random-xcor random-ycor
+    set heading 0
   ]
 end
 
@@ -80,28 +93,31 @@ end
 to move_to_patient
   ask turtles[
     ;SEARCH_patients else SEARCH_hospitals
-    ifelse not carry_patient [
-      ;patients
-      if patch_found? blue [
-        set carry_patient True
-        set color red
-        set pcolor black
-        set patients (patients - 1)
-        (ifelse is-ambulance? self [
-          set total_score_ambulances (total_score_ambulances + 1)
-        ] is-small-ambulance? self [
-          set total_score_small_ambulances (total_score_small_ambulances + 1)
-        ][])
 
-    ]
-    ][
-      ;hospitals
-      if patch_found? orange [
-        set carry_patient False
-        set color white
-        set pcolor black
-        set hospitals (hospitals - 1)
-        set score (score + 1)
+    if not is-pedestrian? self [
+      ifelse not carry_patient [
+        ;patients
+        if patch_found? blue [
+          set carry_patient True
+          set color red
+          set pcolor black
+          set patients (patients - 1)
+          (ifelse is-ambulance? self [
+            set total_score_ambulances (total_score_ambulances + 1)
+          ] is-small-ambulance? self [
+            set total_score_small_ambulances (total_score_small_ambulances + 1)
+          ][])
+
+        ]
+      ][
+        ;hospitals
+        if patch_found? orange [
+          set carry_patient False
+          set color white
+          set pcolor black
+          set hospitals (hospitals - 1)
+          set score (score + 1)
+        ]
       ]
     ]
   ]
@@ -109,15 +125,16 @@ to move_to_patient
   ask ambulances [
     rotate_turtle xcor ycor "ambulance"
     forward 1
-
-    let nearest_patient find_nearest_patient "ambulance"
   ]
 
   ask small-ambulances [
     rotate_turtle xcor ycor "small-ambulance"
     forward 1
+  ]
 
-    let nearest_patient find_nearest_patient "small-ambulance"
+  ask pedestrians [
+    rotate_turtle xcor ycor "pedestrian"
+    forward 1
   ]
 
   check_patients_hospitals
@@ -128,7 +145,6 @@ to move_to_patient
   display_labels
   set patients (count patches with [pcolor = blue])
   set hospitals (count patches with [pcolor = orange])
-  ;type "hospitals: " type hospitals type ", patients: " print patients
   tick
 end
 
@@ -144,20 +160,27 @@ end
 to rotate_turtle [x y ambulance_mode]
   let move_code -1
 
-  ifelse carry_patient = True [
-    ;search for hospitals
-    ;for now just only random move
-    set move_code find_best_move_from_availables x y "hospital" ambulance_mode
-  ][
+  ifelse ambulance_mode != "pedestrian" [
+    ifelse carry_patient = True[
+      ;search for hospitals
+      ;for now just only random move
+      set move_code find_best_move_from_availables x y "hospital" ambulance_mode
+    ][
       ;search for patients
-    set move_code find_best_move_from_availables x y "patient" ambulance_mode
+      set move_code find_best_move_from_availables x y "patient" ambulance_mode
+    ]
   ]
+  [
+    set move_code get_random_move x y
+  ]
+
+
 
   (ifelse move_code = 1 [set heading 0];up
   move_code = 2 [set heading 90];right
   move_code = 3 [set heading 270];left
   move_code = 4 [set heading 180];back
-  [print "I don't know how to proceed"])
+  [])
 end
 ;returns patch
 to-report find_nearest_patient [ambulance_mode]
@@ -298,14 +321,14 @@ end
 to create_new_patients_hospitals
   ;na balw maximum number of patients/hospitals.
   ask patches with [pcolor != yellow][
-    if random 100 < max_patients_hospitals_ratio and patients < max_patients [
+    if random 100 < 20 and patients < max_patients [
       set pcolor blue
       set countdown random max_countdown
       set patients patients + 1
     ]
   ]
   ask patches with [pcolor != yellow][
-    if random 100 < max_patients_hospitals_ratio and hospitals < max_hospitals [
+    if random 100 < 20 and hospitals < max_hospitals [
       set pcolor orange
       set countdown random max_countdown
       set hospitals hospitals + 1
@@ -314,7 +337,11 @@ to create_new_patients_hospitals
 end
 
 to display_labels
-  ask turtles [ set label score ]
+  ask turtles [
+    if not is-pedestrian? self [
+      set label score
+    ]
+  ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -402,7 +429,7 @@ max_agents
 max_agents
 1
 40
-18.0
+10.0
 1
 1
 NIL
@@ -417,7 +444,7 @@ obstacle_ratio
 obstacle_ratio
 0
 20
-3.0
+2.0
 1
 1
 NIL
@@ -432,7 +459,7 @@ max_hospitals
 max_hospitals
 0
 50
-28.0
+10.0
 1
 1
 NIL
@@ -447,7 +474,7 @@ max_patients
 max_patients
 0
 50
-28.0
+10.0
 1
 1
 NIL
@@ -473,17 +500,17 @@ max-small-ambulances
 max-small-ambulances
 0
 50
-25.0
+10.0
 1
 1
 NIL
 HORIZONTAL
 
 PLOT
-225
-637
-983
-757
+201
+644
+959
+764
 score per ambulance type
 time
 score
@@ -499,15 +526,15 @@ PENS
 "small-ambulance" 1.0 0 -5298144 true "" "plot total_score_small_ambulances"
 
 SLIDER
-2
-405
-203
-438
+3
+369
+204
+402
 small-ambulance-lookahead
 small-ambulance-lookahead
 1
 100
-1.0
+64.0
 1
 1
 NIL
@@ -523,6 +550,43 @@ max_patients_hospitals_ratio
 0
 20
 2.0
+1
+1
+NIL
+HORIZONTAL
+
+MONITOR
+0
+122
+181
+167
+carry patients / all ambulances
+100 * count ambulances with [ carry_patient = True ] / count ambulances
+2
+1
+11
+
+MONITOR
+0
+168
+206
+213
+carry patient / all small-ambulances
+100 * count small-ambulances with [ carry_patient = True ] / count small-ambulances
+2
+1
+11
+
+SLIDER
+3
+403
+175
+436
+max-pedestrians
+max-pedestrians
+0
+1000
+200.0
 1
 1
 NIL
