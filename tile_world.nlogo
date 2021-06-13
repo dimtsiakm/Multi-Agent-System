@@ -1,22 +1,24 @@
-globals [ patients hospitals total_score_ambulances total_score_small_ambulances ]
+globals [ patients hospitals total_score_ambulances total_score_small_ambulances sum_steps transportations]
 
 breed [ ambulances ambulance ]
 breed [ small-ambulances small-ambulance ]
 breed [ pedestrians pedestrian ]
 
-ambulances-own [ carry_patient score ]
-small-ambulances-own [ carry_patient score ]
+ambulances-own [ carry_patient score carry_steps ]
+small-ambulances-own [ carry_patient score carry_steps ]
 
 patches-own [ countdown ]
 
 to setup
   clear-all
   resize-world (- world_size) world_size (- world_size) world_size
-  set-patch-size 12
+  set-patch-size 13
   set total_score_ambulances 0
   set total_score_small_ambulances 0
   set patients 0
   set hospitals 0
+  set sum_steps 0
+  set transportations 0
   setup-obstacles
   setup-ambulances
   setup-small-ambulances
@@ -29,7 +31,6 @@ end
 to setup-hospitals
   ask patches [
     if random 100 < 20 and hospitals < max_hospitals[
-      ;create-people 1 [setxy pxcor pycor set shape "person"]
       set pcolor orange
       set countdown random max_countdown
       set hospitals hospitals + 1
@@ -74,6 +75,7 @@ to setup-small-ambulances
     set carry_patient False
     set score 0
     set heading 0
+    set carry_steps 0
   ]
 end
 
@@ -86,6 +88,7 @@ to setup-ambulances
     set carry_patient False
     set score 0
     set heading 0
+    set carry_steps 0
   ]
 end
 
@@ -93,7 +96,6 @@ end
 to move_to_patient
   ask turtles[
     ;SEARCH_patients else SEARCH_hospitals
-
     if not is-pedestrian? self [
       ifelse not carry_patient [
         ;patients
@@ -111,7 +113,12 @@ to move_to_patient
         ]
       ][
         ;hospitals
+        set carry_steps (carry_steps + 1)
         if patch_found? orange [
+          ;update global average steps
+          set sum_steps (sum_steps + carry_steps)
+          set transportations (transportations + 1)
+          set carry_steps 0
           set carry_patient False
           set color white
           set pcolor black
@@ -141,7 +148,6 @@ to move_to_patient
   if patients <= 0 or hospitals <= 0 [
     create_new_patients_hospitals
   ]
-  ;create_new_patients_hospitals
   display_labels
   set patients (count patches with [pcolor = blue])
   set hospitals (count patches with [pcolor = orange])
@@ -174,14 +180,13 @@ to rotate_turtle [x y ambulance_mode]
     set move_code get_random_move x y
   ]
 
-
-
   (ifelse move_code = 1 [set heading 0];up
   move_code = 2 [set heading 90];right
   move_code = 3 [set heading 270];left
   move_code = 4 [set heading 180];back
   [])
 end
+
 ;returns patch
 to-report find_nearest_patient [ambulance_mode]
   let nearest_patient 0
@@ -208,8 +213,7 @@ to-report find_best_move_from_availables [x y search_mode ambulance_mode]
   let nearest_goal 0
   (ifelse search_mode = "patient" [
     set nearest_goal find_nearest_patient ambulance_mode
-  ] search_mode = "hospital"
-  [
+  ] search_mode = "hospital"[
     set nearest_goal find_nearest_hospital
   ])
 
@@ -319,7 +323,6 @@ to check_patients_hospitals
 end
 
 to create_new_patients_hospitals
-  ;na balw maximum number of patients/hospitals.
   ask patches with [pcolor != yellow][
     if random 100 < 20 and patients < max_patients [
       set pcolor blue
@@ -347,11 +350,11 @@ end
 GRAPHICS-WINDOW
 210
 10
-950
 751
+552
 -1
 -1
-12.0
+13.0
 1
 10
 1
@@ -361,10 +364,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--30
-30
--30
-30
+-20
+20
+-20
+20
 0
 0
 1
@@ -429,7 +432,7 @@ max_agents
 max_agents
 1
 40
-10.0
+9.0
 1
 1
 NIL
@@ -486,7 +489,7 @@ INPUTBOX
 157
 358
 world_size
-30.0
+20.0
 1
 0
 Number
@@ -500,7 +503,7 @@ max-small-ambulances
 max-small-ambulances
 0
 50
-10.0
+9.0
 1
 1
 NIL
@@ -534,7 +537,7 @@ small-ambulance-lookahead
 small-ambulance-lookahead
 1
 100
-64.0
+66.0
 1
 1
 NIL
@@ -591,6 +594,17 @@ max-pedestrians
 1
 NIL
 HORIZONTAL
+
+MONITOR
+2
+222
+96
+267
+Average steps
+sum_steps / transportations
+2
+1
+11
 
 @#$#@#$#@
 @#$#@#$#@
